@@ -86,19 +86,19 @@ async def getCurrentMemberRole(guild: discord.Guild):
 
     return role
 
-def addUser2db(member: discord.Member,data:dict):
+def addUser2db(member: discord.Member,serverId:str,data:dict):
     user_id = str(member.id)
 
     # Create the user entry if it doesn't exist
-    if user_id not in data["users"]:
-        data["users"][user_id] = {
+    if user_id not in data[serverId]["users"]:
+        data[serverId]["users"][user_id] = {
             "name": member.display_name,
             "roles": [],
             "currentMember": True
         }
     else:
-        data["users"][user_id]["name"] = member.display_name
-        data["users"][user_id]["currentMember"] = True
+        data[serverId]["users"][user_id]["name"] = member.display_name
+        data[serverId]["users"][user_id]["currentMember"] = True
     pass
 
 async def addMemberRoleToUser(interaction: discord.Interaction,member: discord.Member):
@@ -138,7 +138,8 @@ async def add_member(
     DEBUG(f"loading db data")
     data = load_data()
     
-    addUser2db(member,data)
+    serverId = str(interaction.guild.id)
+    addUser2db(member,serverId,data)
     curMemberRole = await getCurrentMemberRole(interaction.guild)
     if curMemberRole in member.roles:
         DEBUG(f"error : already a member")
@@ -174,7 +175,7 @@ async def create_period(interaction: discord.Interaction,period:str=""):
     await interaction.response.defer()
 
     guild = interaction.guild
-
+    serverId = str(guild.id)
     if guild is None:
         await interaction.followup.send(
             "This command can only be used inside a server."
@@ -201,12 +202,12 @@ async def create_period(interaction: discord.Interaction,period:str=""):
                 continue
             #print(member.display_name)
             if curMember in member.roles:
-                if str(userId) not in data["users"].keys():
+                if str(userId) not in data[serverId]["users"].keys():
                     DEBUG(f"user {user.display_name} - not in db. creating reference and adding <{period}> role")
                     reason["Not in db"].append(user.display_name)
-                    addUser2db(member,data)
+                    addUser2db(member,serverId,data)
                     await addMemberRoleToUser(interaction,member)
-                    data["users"][str(userId)]["roles"].append(period)
+                    data[serverId]["users"][str(userId)]["roles"].append(period)
                     addedCnt+=1
                     await member.add_roles(newRole)
                 elif newRole in user.roles:
@@ -215,15 +216,15 @@ async def create_period(interaction: discord.Interaction,period:str=""):
                     reason["Already Has Role"].append(user.display_name)
                 else:
                     DEBUG(f"user {user.display_name} - adding <{period}> role")
-                    data["users"][str(userId)]["roles"].append(period)
+                    data[serverId]["users"][str(userId)]["roles"].append(period)
                     addedCnt += 1
                     await member.add_roles(newRole)
                     pass
             else:
                 DEBUG(f"user {user.display_name} - does not have member role. removing <{period}> role if there is one")
-                if str(userId) not in data["users"].keys():
-                    addUser2db(member,data)
-                data["users"][str(userId)]["currentMember"] = False
+                if str(userId) not in data[serverId]["users"].keys():
+                    addUser2db(member,serverId,data)
+                data[serverId]["users"][str(userId)]["currentMember"] = False
                 skippedCnt+=1
                 await member.remove_roles(newRole)
                 reason["Not A Member"].append(user.display_name)
@@ -322,7 +323,7 @@ async def reditribute_current_member(interaction: discord.Interaction,member: di
         member = guild.get_member(userId)
         if member.bot:
             continue
-        if str(userId) not in data["users"].keys():
+        if str(userId) not in data[serverId]["users"].keys():
             usersNotIndb.append(user.display_name)
         pass
     
@@ -365,22 +366,24 @@ async def update_displayname(interaction: discord.Interaction,member: discord.Me
         return
     DEBUG("> Running update_displayname")
     
+    serverId = serverId = str(interaction.guild.id)
+    
     DEBUG(f"loading db data")
     data = load_data()
     if member != None:
-        if str(member.id) not in data["users"].keys():
-            addUser2db(member,data)
-            data["users"][str(member.id)]["currentMember"] = False
-        data["users"][str(member.id)]["name"] = member.display_name
+        if str(member.id) not in data[serverId]["users"].keys():
+            addUser2db(member,serverId,data)
+            data[serverId]["users"][str(member.id)]["currentMember"] = False
+        data[serverId]["users"][str(member.id)]["name"] = member.display_name
         return
     
     guild = interaction.guild
     allUsers = guild.members
     for user in allUsers:
-        if str(user.id) not in data["users"].keys():
-            addUser2db(user,data)
-            data["users"][str(user.id)]["currentMember"] = False
-        data["users"][str(user.id)]["name"] = user.display_name
+        if str(user.id) not in data[serverId]["users"].keys():
+            addUser2db(member,serverId,data)
+            data[serverId]["users"][str(user.id)]["currentMember"] = False
+        data[serverId]["users"][str(user.id)]["name"] = user.display_name
         return
         pass
     DEBUG(f"saving db data")
