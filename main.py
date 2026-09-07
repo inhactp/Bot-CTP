@@ -10,7 +10,6 @@ DATA_FILE = "data.json"
 SCRIPT_DIR = Path(__file__).resolve().parent
 DATA_FILE = (SCRIPT_DIR / "data.json").resolve()
 
-# Data helpers
 
 def load_data():
     """
@@ -24,7 +23,11 @@ def load_data():
             json.dump(basic, file, indent=4, ensure_ascii=False)
             return basic
     with open(DATA_FILE, "r", encoding="utf-8") as file:
-        return json.load(file)
+        data = json.load(file)
+        if data["botid"] == "":
+            print("No botid present! Please input the discord bot id in data.json!")
+            raise
+        return data
     pass
 
 
@@ -262,7 +265,7 @@ async def create_period(interaction: discord.Interaction,period:str=""):
     pass
 
 @bot.tree.command(
-    name="현재멤버 업데이트",
+    name="현재멤버재부여",
     description="db에 따라 현재멤버 역할을 재부여합니다"
 )
 @app_commands.describe(
