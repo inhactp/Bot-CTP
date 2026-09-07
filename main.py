@@ -307,6 +307,7 @@ async def reditribute_current_member(interaction: discord.Interaction,member: di
     await interaction.response.defer()
     
     guild = interaction.guild
+    serverId = guild.id
     DEBUG(f"loading db data")
     data = load_data()
     curMember = await getCurrentMemberRole(guild)
