@@ -29,15 +29,22 @@ def load_data():
             json.dump(basic, file, indent=4, ensure_ascii=False)
             return basic
     with open(DATA_FILE, "r", encoding="utf-8") as file:
-        data = json.load(file)
+        data:dict = json.load(file)
         if data["botid"] == "":
             print("No botid present! Please input the discord bot id in data.json!")
             raise
+        #parsing data to make roles into set
+        for server,users in data.items():
+            if server=="botid":
+                continue
+            for userid,dat in users["users"].items():
+                dat["roles"] = set(dat["roles"])
+            pass
         return data
     pass
 def save_data(data):
     with open(DATA_FILE, "w", encoding="utf-8") as file:
-        json.dump(data, file, indent=4, ensure_ascii=False)
+        json.dump(data, file, indent=4, ensure_ascii=False,default=list)
 
 
 # Bot setup
@@ -95,7 +102,7 @@ def addUser2db(member: discord.Member,serverId:str,data:dict):
     if user_id not in data[serverId]["users"]:
         data[serverId]["users"][user_id] = {
             "name": member.display_name,
-            "roles": [],
+            "roles": set(),
             "currentMember": True
         }
     else:
@@ -207,24 +214,26 @@ async def create_period(interaction: discord.Interaction,period:str=""):
                     reason["Not in db"].append(user.display_name)
                     addUser2db(member,serverId,data)
                     await addMemberRoleToUser(interaction,member)
-                    data[serverId]["users"][str(userId)]["roles"].append(period)
+                    data[serverId]["users"][str(userId)]["roles"].add(period)
                     addedCnt+=1
                     await member.add_roles(newRole)
                 elif newRole in user.roles:
                     DEBUG(f"user {user.display_name} - already has <{period}> role. skipping..")
+                    data[serverId]["users"][str(userId)]["roles"].add(period)
                     skippedCnt += 1
                     reason["Already Has Role"].append(user.display_name)
                 else:
                     DEBUG(f"user {user.display_name} - adding <{period}> role")
-                    data[serverId]["users"][str(userId)]["roles"].append(period)
+                    data[serverId]["users"][str(userId)]["roles"].add(period)
                     addedCnt += 1
                     await member.add_roles(newRole)
                     pass
-            else:
+            else:# 디스코드서버에 멤버역할이 없을시
                 DEBUG(f"user {user.display_name} - does not have member role. removing <{period}> role if there is one")
                 if str(userId) not in data[serverId]["users"].keys():
                     addUser2db(member,serverId,data)
                 data[serverId]["users"][str(userId)]["currentMember"] = False
+                data[serverId]["users"][str(userId)]["roles"].discard(period)
                 skippedCnt+=1
                 await member.remove_roles(newRole)
                 reason["Not A Member"].append(user.display_name)
@@ -307,7 +316,7 @@ async def reditribute_current_member(interaction: discord.Interaction):
     await interaction.response.defer()
     
     guild = interaction.guild
-    serverId = guild.id
+    serverId = str(guild.id)
     DEBUG(f"loading db data")
     data = load_data()
     curMember = await getCurrentMemberRole(guild)
@@ -315,31 +324,36 @@ async def reditribute_current_member(interaction: discord.Interaction):
     addedCnt = 0
     removedCnt = 0
     usersNotIndb = []
-
+    usersNotIndbId:set[int] = set()
+    
     # compare every discord user with data.json to get the intersection
     allUsers = guild.members
     userCnt = len([x for x in allUsers if not x.bot])
     data = load_data()
-    for user in allUsers:
-        userId = user.id
-        member = guild.get_member(userId)
+    for member in allUsers:
+        userId = member.id
         if member.bot:
             continue
         if str(userId) not in data[serverId]["users"].keys():
-            usersNotIndb.append(user.display_name)
+            usersNotIndb.append(member.display_name)
+            usersNotIndbId.add(member.id)
         pass
     
-    for userId,userdata in data:
+    for userId,userdata in data[serverId]["users"].items():
+        if userId in usersNotIndbId:
+            continue
         userId = int(userId)
         member = guild.get_member(userId)
         if userdata["currentMember"] and curMember not in member.roles:
-            DEBUG(f"user {member.display_name} - adding role on discord")
+            print("add")
+            DEBUG(f"member {member.display_name} - adding role on discord")
             addedCnt+=1
-            member.add_roles(curMember)
+            await member.add_roles(curMember)
         elif not userdata["currentMember"] and curMember in member.roles:
-            DEBUG(f"user {member.display_name} - removing role on discord")
+            print("rem")
+            DEBUG(f"member {member.display_name} - removing role on discord")
             removedCnt+=1
-            member.remove_roles(curMember)
+            await member.remove_roles(curMember)
             pass
         pass
     
@@ -356,43 +370,49 @@ async def reditribute_current_member(interaction: discord.Interaction):
     description="db에 현재 디스코드 닉네임들로 업데이트합니다"
 )
 @app_commands.describe(
-    member="업데이트할 멤버. 비워놓으면 모든 멤버를 업데이트합니다."
+    member="업데이트할 멤버. 비워놓으면 모든 멤버를 업데이트합니다. db에 멤버가 없다면 자동으로 자리를 생성합니다"
 )
 @app_commands.checks.has_permissions(administrator=True)
-async def update_displayname(interaction: discord.Interaction,member: discord.Member=None):
-    if type(member) != discord.Member:
+async def update_display_name(interaction: discord.Interaction,member: discord.Member=None):
+    if type(member) != discord.Member and member != None:
         await interaction.response.send_message(
             f"{str(member)}는 멤버가 아닙니다.",
             ephemeral=True
         )
         return
-    DEBUG("> Running update_displayname")
+    DEBUG("> Running update_display_name")
     
-    serverId = serverId = str(interaction.guild.id)
+    serverId = str(interaction.guild.id)
     
     DEBUG(f"loading db data")
     data = load_data()
     if member != None:
+        DEBUG(f"renew nickname of - {member.display_name}")
         if str(member.id) not in data[serverId]["users"].keys():
+            DEBUG(f"{member.display_name} does not exist in db. adding a fresh slide")
             addUser2db(member,serverId,data)
             data[serverId]["users"][str(member.id)]["currentMember"] = False
         data[serverId]["users"][str(member.id)]["name"] = member.display_name
+        await interaction.response.send_message(f"성공적으로 {member.display_name}님의 닉네임을 갱신했습니다.")
+        DEBUG(f"saving db data")
+        save_data(data)
         return
-    
+    DEBUG(f"renew all nicknames")
     guild = interaction.guild
     allUsers = guild.members
-    for user in allUsers:
-        if str(user.id) not in data[serverId]["users"].keys():
+    for member in allUsers:
+        if member.bot:
+            continue
+        DEBUG(member.display_name)
+        if str(member.id) not in data[serverId]["users"].keys():
+            DEBUG(f"{member.display_name} does not exist in db. adding a fresh slide")
             addUser2db(member,serverId,data)
-            data[serverId]["users"][str(user.id)]["currentMember"] = False
-        data[serverId]["users"][str(user.id)]["name"] = user.display_name
-        return
+            data[serverId]["users"][str(member.id)]["currentMember"] = False
+        data[serverId]["users"][str(member.id)]["name"] = member.display_name
         pass
     DEBUG(f"saving db data")
-    data = save_data(data)
-    await interaction.response.send_message(
-        f"{member.mention}님을 멤버로 추가했습니다.",
-    )
+    save_data(data)
+    await interaction.response.send_message(f"성공적으로 db 닉네임들을 갱신했습니다.")
     pass
 
 
@@ -419,7 +439,7 @@ async def create_period_error(interaction: discord.Interaction,error):
 @reditribute_current_member.error
 async def reditribute_current_member_error(interaction: discord.Interaction,error):
     await defaultErrorHandling(interaction,error)
-@update_displayname.error
+@update_display_name.error
 async def reditribute_current_member_error(interaction: discord.Interaction,error):
     await defaultErrorHandling(interaction,error)
     pass
