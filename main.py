@@ -23,7 +23,7 @@ def load_data():
     - makes & returns basic data with no entries if data.json isnt present
     """
     
-    basic = {"botid":"","users":{}}
+    basic = {"botid":""}
     if not DATA_FILE.exists():
         with open(DATA_FILE, "w", encoding="utf-8") as file:
             json.dump(basic, file, indent=4, ensure_ascii=False)
@@ -87,6 +87,8 @@ async def getCurrentMemberRole(guild: discord.Guild):
     return role
 
 def addUser2db(member: discord.Member,serverId:str,data:dict):
+    if serverId not in data.keys():
+        data[serverId] = {"users":dict()}
     user_id = str(member.id)
 
     # Create the user entry if it doesn't exist
@@ -139,7 +141,6 @@ async def add_member(
     data = load_data()
     
     serverId = str(interaction.guild.id)
-    addUser2db(member,serverId,data)
     curMemberRole = await getCurrentMemberRole(interaction.guild)
     if curMemberRole in member.roles:
         DEBUG(f"error : already a member")
@@ -147,10 +148,9 @@ async def add_member(
             f"{member.mention}님은 이미 멤버입니다.",
         )
         return
-    await member.add_roles(
-        curMemberRole,
-        reason="Member added through bot"
-    )
+    
+    addUser2db(member,serverId,data)
+    await member.add_roles(curMemberRole)
     DEBUG(f"saving db data")
     save_data(data)
     
@@ -172,7 +172,7 @@ async def add_member(
 @app_commands.checks.has_permissions(administrator=True)
 async def create_period(interaction: discord.Interaction,period:str=""):
     DEBUG("> Running create_period")
-    await interaction.response.defer()
+    await interaction.response.defer(ephemeral=True)
 
     guild = interaction.guild
     serverId = str(guild.id)
@@ -231,15 +231,16 @@ async def create_period(interaction: discord.Interaction,period:str=""):
             pass
         DEBUG(f"saving db data")
         save_data(data)
-        
-        memberstr = ' '.join(reason['Already Has Role'][:4]) + "..." if len(reason['Already Has Role'])>4 else ""
-        nmemberstr = ' '.join(reason['Not A Member'][:4]) + "..." if len(reason['Not A Member'])>4 else ""
+        #print(">>>>",reason['Already Has Role'],reason['Already Has Role'][:4])
+        memberstr = ' '.join(reason['Already Has Role'][:4]) + ("..." if len(reason['Already Has Role'])>4 else "")
+        nmemberstr = ' '.join(reason['Not A Member'][:4]) + ("..." if len(reason['Not A Member'])>4 else "")
+        #print(">>>>",memberstr)
         # Result
         await interaction.followup.send(
             content=f"역할생성 - `{period}`.\n"+
             f"추가한인원 ({addedCnt}), 건너뛴인원 ({skippedCnt}) / 총인원({userCnt}).\n"+
             f"""{f"<{period}>역할소유자 - {memberstr} ({len(reason['Already Has Role'])}명)\n" if len(reason['Already Has Role']) else ""}"""+
-            f"""{f"<{period}>멤버이외 - {nmemberstr} ({len(reason['Not A Member'])}명)" if len(reason['Not A Member']) else ""}"""
+            f"""{f"<{period}>멤버이외 - {nmemberstr} ({len(reason['Not A Member'])}명)" if len(reason['Not A Member']) else ""}""",ephemeral=False
         )
         pass
     
@@ -253,7 +254,7 @@ async def create_period(interaction: discord.Interaction,period:str=""):
         pass
     async def cancel_callback(interaction: discord.Interaction):
         await interaction.response.edit_message(
-            content="취소됨. ❌",
+            content="취소됨.",
             view=None
         )
 
@@ -290,7 +291,7 @@ async def create_period(interaction: discord.Interaction,period:str=""):
         DEBUG(f"<{period}> waiting confirmation")
         view = confirmAutoPeriod()
 
-        await interaction.followup.send(f"자동으로 {period} 역할을 사용합니다",view=view)
+        await interaction.followup.send(f"자동으로 {period} 역할을 사용합니다",view=view,ephemeral=True)
         return
     DEBUG(f"given period - <{period}>")
     await addRoles(period)
