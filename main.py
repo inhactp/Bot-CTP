@@ -302,7 +302,7 @@ async def create_period(interaction: discord.Interaction,period:str=""):
     description="db에 따라 디스코드 멤버 역할을 재부여합니다. 반대의 경우는 분기역할적용 커맨드를 사용해주세요"
 )
 @app_commands.checks.has_permissions(administrator=True)
-async def reditribute_current_member(interaction: discord.Interaction,member: discord.Member):
+async def reditribute_current_member(interaction: discord.Interaction):
     DEBUG("> Running reditribute_current_member")
     await interaction.response.defer()
     
