@@ -35,8 +35,6 @@ def load_data():
             raise
         return data
     pass
-
-
 def save_data(data):
     with open(DATA_FILE, "w", encoding="utf-8") as file:
         json.dump(data, file, indent=4, ensure_ascii=False)
@@ -350,6 +348,50 @@ async def reditribute_current_member(interaction: discord.Interaction,member: di
     )
     pass
 
+@bot.tree.command(
+    name="이름업데이트",
+    description="db에 현재 디스코드 닉네임들로 업데이트합니다"
+)
+@app_commands.describe(
+    member="업데이트할 멤버. 비워놓으면 모든 멤버를 업데이트합니다."
+)
+@app_commands.checks.has_permissions(administrator=True)
+async def update_displayname(interaction: discord.Interaction,member: discord.Member=None):
+    if type(member) != discord.Member:
+        await interaction.response.send_message(
+            f"{str(member)}는 멤버가 아닙니다.",
+            ephemeral=True
+        )
+        return
+    DEBUG("> Running update_displayname")
+    
+    DEBUG(f"loading db data")
+    data = load_data()
+    if member != None:
+        if str(member.id) not in data["users"].keys():
+            addUser2db(member,data)
+            data["users"][str(member.id)]["currentMember"] = False
+        data["users"][str(member.id)]["name"] = member.display_name
+        return
+    
+    guild = interaction.guild
+    allUsers = guild.members
+    for user in allUsers:
+        if str(user.id) not in data["users"].keys():
+            addUser2db(user,data)
+            data["users"][str(user.id)]["currentMember"] = False
+        data["users"][str(user.id)]["name"] = user.display_name
+        return
+        pass
+    DEBUG(f"saving db data")
+    data = save_data(data)
+    await interaction.response.send_message(
+        f"{member.mention}님을 멤버로 추가했습니다.",
+    )
+    pass
+
+
+
 async def defaultErrorHandling(interaction,error):
     if isinstance(error, app_commands.errors.MissingPermissions):
         message = "현재 커맨드를 사용하기 위해서는 운영진 역할이 필요합니다"
@@ -370,6 +412,9 @@ async def add_member_error(interaction: discord.Interaction,error):
 async def create_period_error(interaction: discord.Interaction,error):
     await defaultErrorHandling(interaction,error)
 @reditribute_current_member.error
+async def reditribute_current_member_error(interaction: discord.Interaction,error):
+    await defaultErrorHandling(interaction,error)
+@update_displayname.error
 async def reditribute_current_member_error(interaction: discord.Interaction,error):
     await defaultErrorHandling(interaction,error)
     pass
