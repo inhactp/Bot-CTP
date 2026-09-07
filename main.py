@@ -130,14 +130,25 @@ async def add_member(
     member: discord.Member
 ):
     data = load_data()
+    
     addUser2db(member,data)
-
+    curMemberRole = await getCurrentMemberRole(interaction.guild)
+    if curMemberRole in member.roles:
+        await interaction.response.send_message(
+            f"{member.mention}님은 이미 멤버입니다.",
+        )
+        return
+    await member.add_roles(
+        curMemberRole,
+        reason="Member added through bot"
+    )
     save_data(data)
     
     await interaction.response.send_message(
         f"{member.mention}님을 멤버로 추가했습니다.",
         
     )
+    pass
 
 @bot.tree.command(
     name="분기역할적용",
