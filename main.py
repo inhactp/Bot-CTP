@@ -94,12 +94,12 @@ def addUser2db(member: discord.Member,data:dict):
     # Create the user entry if it doesn't exist
     if user_id not in data["users"]:
         data["users"][user_id] = {
-            "name": member.nick,
+            "name": member.display_name,
             "roles": [],
             "currentMember": True
         }
     else:
-        data["users"][user_id]["name"] = member.nick
+        data["users"][user_id]["name"] = member.display_name
         data["users"][user_id]["currentMember"] = True
     pass
 
@@ -136,7 +136,7 @@ async def add_member(
     member: discord.Member
 ):
     DEBUG("> Running add_member")
-    DEBUG(f"target : {member.nick}")
+    DEBUG(f"target : {member.display_name}")
     DEBUG(f"loading db data")
     data = load_data()
     
@@ -155,7 +155,7 @@ async def add_member(
     DEBUG(f"saving db data")
     save_data(data)
     
-    DEBUG(f"succesfully added : {member.nick}")
+    DEBUG(f"succesfully added : {member.display_name}")
     await interaction.response.send_message(
         f"{member.mention}님을 멤버로 추가했습니다.",
         
@@ -201,42 +201,46 @@ async def create_period(interaction: discord.Interaction,period:str=""):
             member = guild.get_member(userId)
             if member.bot:
                 continue
-            #print(member.nick)
+            #print(member.display_name)
             if curMember in member.roles:
                 if str(userId) not in data["users"].keys():
-                    DEBUG(f"user {user.nick} - not in db. creating reference and adding <{period}> role")
-                    reason["Not in db"].append(user.nick)
+                    DEBUG(f"user {user.display_name} - not in db. creating reference and adding <{period}> role")
+                    reason["Not in db"].append(user.display_name)
                     addUser2db(member,data)
                     await addMemberRoleToUser(interaction,member)
                     data["users"][str(userId)]["roles"].append(period)
                     addedCnt+=1
                     await member.add_roles(newRole)
                 elif newRole in user.roles:
-                    DEBUG(f"user {user.nick} - already has <{period}> role. skipping..")
+                    DEBUG(f"user {user.display_name} - already has <{period}> role. skipping..")
                     skippedCnt += 1
-                    reason["Already Has Role"].append(user.nick)
+                    reason["Already Has Role"].append(user.display_name)
                 else:
-                    DEBUG(f"user {user.nick} - adding <{period}> role")
+                    DEBUG(f"user {user.display_name} - adding <{period}> role")
                     data["users"][str(userId)]["roles"].append(period)
                     addedCnt += 1
                     await member.add_roles(newRole)
                     pass
             else:
-                DEBUG(f"user {user.nick} - does not have member role. removing <{period}> role if there is one")
+                DEBUG(f"user {user.display_name} - does not have member role. removing <{period}> role if there is one")
+                if str(userId) not in data["users"].keys():
+                    addUser2db(member,data)
                 data["users"][str(userId)]["currentMember"] = False
                 skippedCnt+=1
                 await member.remove_roles(newRole)
-                reason["Not A Member"].append(user.nick)
+                reason["Not A Member"].append(user.display_name)
             pass
         DEBUG(f"saving db data")
         save_data(data)
-
+        
+        memberstr = ' '.join(reason['Already Has Role'][:4]) + "..." if len(reason['Already Has Role'])>4 else ""
+        nmemberstr = ' '.join(reason['Not A Member'][:4]) + "..." if len(reason['Not A Member'])>4 else ""
         # Result
         await interaction.followup.send(
             content=f"역할생성 - `{period}`.\n"+
-            f"추가인원 ({addedCnt}), 스킵한인원 ({skippedCnt}) / 총인원({userCnt}).\n"+
-            f"""{f"이미 현재역할이 있음 -\n{' '.join(reason['Already Has Role'])}\n" if len(reason['Already Has Role']) else ""}"""+
-            f"""{f"멤버가 아님 -\n{' '.join(reason['Not A Member'])}" if len(reason['Not A Member']) else ""}"""
+            f"추가한인원 ({addedCnt}), 건너뛴인원 ({skippedCnt}) / 총인원({userCnt}).\n"+
+            f"""{f"<{period}>역할소유자 - {memberstr} ({len(reason['Already Has Role'])}명)\n" if len(reason['Already Has Role']) else ""}"""+
+            f"""{f"<{period}>멤버이외 - {nmemberstr} ({len(reason['Not A Member'])}명)" if len(reason['Not A Member']) else ""}"""
         )
         pass
     
@@ -321,18 +325,18 @@ async def reditribute_current_member(interaction: discord.Interaction,member: di
         if member.bot:
             continue
         if str(userId) not in data["users"].keys():
-            usersNotIndb.append(user.nick)
+            usersNotIndb.append(user.display_name)
         pass
     
     for userId,userdata in data:
         userId = int(userId)
         member = guild.get_member(userId)
         if userdata["currentMember"] and curMember not in member.roles:
-            DEBUG(f"user {member.nick} - adding role on discord")
+            DEBUG(f"user {member.display_name} - adding role on discord")
             addedCnt+=1
             member.add_roles(curMember)
         elif not userdata["currentMember"] and curMember in member.roles:
-            DEBUG(f"user {member.nick} - removing role on discord")
+            DEBUG(f"user {member.display_name} - removing role on discord")
             removedCnt+=1
             member.remove_roles(curMember)
             pass
@@ -372,6 +376,6 @@ async def reditribute_current_member_error(interaction: discord.Interaction,erro
 
 
 # Start bot 제발되라 제발되라 제발되라 제발되라 제발되라 제발되라 제발되라 제발되라 제발되라 제발되라 제발되라 제발되라 제발되라 제발되라 제발되라 제발되라 제발되라 제발되라
-
+DEBUGLEVEL = 1
 bot.run(TOKEN)
 
