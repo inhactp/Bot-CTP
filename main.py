@@ -130,18 +130,18 @@ async def add_member(
     member: discord.Member
 ):
     data = load_data()
-    await addUser2db(interaction,member,data)
+    addUser2db(member,data)
 
     save_data(data)
     
     await interaction.response.send_message(
         f"{member.mention}님을 멤버로 추가했습니다.",
-        ephemeral=True
+        
     )
 
 @bot.tree.command(
     name="분기역할적용",
-    description="새로운 분기역할를 만들며 멤버역할을 가진 사람 기준으로 부여합니다. 멤버역할을 부여한 후 실행하는 것이 권장됩니다"
+    description="새로운 분기역할를 만들며 멤버역할을 가진 사람 기준으로 부여합니다. 멤버역할을 모두 부여한 후 실행하는 것이 권장됩니다"
 )
 @app_commands.describe(
     period="2026-2 와 같은 새로운 분기의 이름을 입력세요. 빈칸이면 현재 날짜에 따라 생성됩니다."
@@ -149,7 +149,7 @@ async def add_member(
 )
 @app_commands.checks.has_permissions(administrator=True)
 async def create_period(interaction: discord.Interaction,period:str=""):
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer()
 
     guild = interaction.guild
 
@@ -194,7 +194,7 @@ async def create_period(interaction: discord.Interaction,period:str=""):
                     await member.add_roles(newRole)
                     pass
             else:
-                print(4)
+                data["users"][str(userId)]["currentMember"] = False
                 skippedCnt+=1
                 await member.remove_roles(newRole)
                 reason["Not A Member"].append(user.name)
@@ -208,6 +208,7 @@ async def create_period(interaction: discord.Interaction,period:str=""):
             f"""{f"이미 현재역할이 있음 -\n{' '.join(reason['Already Has Role'])}\n" if len(reason['Already Has Role']) else ""}"""+
             f"""{f"멤버가 아님 -\n{' '.join(reason['Not A Member'])}" if len(reason['Not A Member']) else ""}"""
         )
+        pass
     
     async def confirm_callback(interaction: discord.Interaction):
         await interaction.response.edit_message(
@@ -255,68 +256,86 @@ async def create_period(interaction: discord.Interaction,period:str=""):
         period = f"{year}-{pd}"
         view = confirmAutoPeriod()
 
-        await interaction.followup.send(
-            f"자동으로 {period} 역할을 사용합니다",
-            view=view,
-            ephemeral=True
-        )
+        await interaction.followup.send(f"자동으로 {period} 역할을 사용합니다",view=view)
         return
     await addRoles(period)
     pass
 
 @bot.tree.command(
     name="현재멤버재부여",
-    description="db에 따라 현재멤버 역할을 재부여합니다"
-)
-@app_commands.describe(
-    member="추가할 멤버"
+    description="db에 따라 디스코드 멤버 역할을 재부여합니다. 반대의 경우는 분기역할적용 커맨드를 사용해주세요"
 )
 @app_commands.checks.has_permissions(administrator=True)
-async def add_member(
-    interaction: discord.Interaction,
-    member: discord.Member
-):
-    data = load_data()
-    await addUser2db(interaction,member,data)
-
-    save_data(data)
+async def reditribute_current_member(interaction: discord.Interaction,member: discord.Member):
+    await interaction.response.defer()
     
-    await interaction.response.send_message(
-        f"{member.mention}님을 멤버로 추가했습니다.",
-        ephemeral=True
+    guild = interaction.guild
+    data = load_data()
+    
+    save_data(data)
+    curMember = await getCurrentMemberRole(guild)
+    
+    addedCnt = 0
+    removedCnt = 0
+    usersNotIndb = []
+
+    # compare every discord user with data.json to get the intersection
+    allUsers = guild.members
+    userCnt = len([x for x in allUsers if not x.bot])
+    data = load_data()
+    for user in allUsers:
+        userId = user.id
+        member = guild.get_member(userId)
+        if member.bot:
+            continue
+        if str(userId) not in data["users"].keys():
+            usersNotIndb.append(user.name)
+        pass
+    
+    for userId,userdata in data:
+        userId = int(userId)
+        member = guild.get_member(userId)
+        if userdata["currentMember"] and curMember not in member.roles:
+            addedCnt+=1
+            member.add_roles(curMember)
+        elif not userdata["currentMember"] and curMember in member.roles:
+            removedCnt+=1
+            member.remove_roles(curMember)
+            pass
+        pass
+    
+
+    # Result
+    await interaction.followup.send(
+        content=f"추가인원 ({addedCnt}), 제거한인원 ({removedCnt}) / 총인원({userCnt}).\n"+
+        f"""{f"db에 없음 -\n{' '.join(usersNotIndb)}\n" if len(usersNotIndb) else ""}"""
     )
+    pass
+    pass
+
+async def defaultErrorHandling(interaction,error):
+    if isinstance(error, app_commands.errors.MissingPermissions):
+        message = "현재 커맨드를 사용하기 위해서는 운영진 역할이 필요합니다"
+    else:
+        message = f"An error occurred: `{error}`"
+
+    if interaction.response.is_done():
+        await interaction.followup.send(message, )
+    else:
+        await interaction.response.send_message(message, )
+    pass
 
 # Error handling
 @add_member.error
-async def add_member_error(
-    interaction: discord.Interaction,
-    error
-):
-    if isinstance(error, app_commands.errors.MissingPermissions):
-        message = "현재 커맨드를 사용하기 위해서는 운영진 역할이 필요합니다"
-    else:
-        message = f"An error occurred: `{error}`"
-
-    if interaction.response.is_done():
-        await interaction.followup.send(message, ephemeral=True)
-    else:
-        await interaction.response.send_message(message, ephemeral=True)
-
-
+async def add_member_error(interaction: discord.Interaction,error):
+    await defaultErrorHandling(interaction,error)
 @create_period.error
-async def create_period_error(
-    interaction: discord.Interaction,
-    error
-):
-    if isinstance(error, app_commands.errors.MissingPermissions):
-        message = "현재 커맨드를 사용하기 위해서는 운영진 역할이 필요합니다"
-    else:
-        message = f"An error occurred: `{error}`"
-
-    if interaction.response.is_done():
-        await interaction.followup.send(message, ephemeral=True)
-    else:
-        await interaction.response.send_message(message, ephemeral=True)
+async def create_period_error(interaction: discord.Interaction,error):
+    await defaultErrorHandling(interaction,error)
+@reditribute_current_member.error
+async def reditribute_current_member_error(interaction: discord.Interaction,error):
+    await defaultErrorHandling(interaction,error)
+    pass
 
 
 # Start bot 제발되라 제발되라 제발되라 제발되라 제발되라 제발되라 제발되라 제발되라 제발되라 제발되라 제발되라 제발되라 제발되라 제발되라 제발되라 제발되라 제발되라 제발되라
