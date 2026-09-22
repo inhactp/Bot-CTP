@@ -1,9 +1,17 @@
+import asyncio
 import json
+import traceback
+from io import BytesIO
 import discord
 from discord.ext import commands
 from discord import app_commands
 from pathlib import Path
 from datetime import datetime
+
+try:
+    from Python.tools.CTPDiscordBot.JungolScraper import getScoreboard # type: ignore
+except:
+    from JungolScraper import getScoreboard # type: ignore
 
 
 DATA_FILE = "data.json"
@@ -35,7 +43,7 @@ def load_data():
             raise
         #parsing data to make roles into set
         for server,users in data.items():
-            if server=="botid":
+            if not isinstance(users,dict) or "users" not in users:
                 continue
             for userid,dat in users["users"].items():
                 dat["roles"] = set(dat["roles"])
@@ -55,6 +63,7 @@ TOKEN = data["botid"]
 
 intents = discord.Intents.default()
 intents.members = True
+intents.message_content = True
 
 bot = commands.Bot(
     command_prefix="/",
@@ -93,6 +102,22 @@ async def getCurrentMemberRole(guild: discord.Guild):
 
     return role
 
+async def getCurrentModeratorRole(guild: discord.Guild):
+    """
+    Gets the '운영진' Discord role.
+
+    If it doesn't exist, create it.
+    """
+    role = discord.utils.get(guild.roles, name="운영진")
+
+    if role is None:
+        role = await guild.create_role(
+            name="운영진",
+            reason="Automatically created by the bot"
+        )
+
+    return role
+
 def addUser2db(member: discord.Member,serverId:str,data:dict):
     if serverId not in data.keys():
         data[serverId] = {"users":dict()}
@@ -103,7 +128,8 @@ def addUser2db(member: discord.Member,serverId:str,data:dict):
         data[serverId]["users"][user_id] = {
             "name": member.display_name,
             "roles": set(),
-            "currentMember": True
+            "currentMember": True,
+            "currentModerator": False
         }
     else:
         data[serverId]["users"][user_id]["name"] = member.display_name
@@ -174,7 +200,6 @@ async def add_member(
 )
 @app_commands.describe(
     period="2026-2 와 같은 새로운 분기의 이름을 입력세요. 빈칸이면 현재 날짜에 따라 생성됩니다."
-    
 )
 @app_commands.checks.has_permissions(administrator=True)
 async def create_period(interaction: discord.Interaction,period:str=""):
@@ -307,8 +332,8 @@ async def create_period(interaction: discord.Interaction,period:str=""):
     pass
 
 @bot.tree.command(
-    name="현재멤버재부여",
-    description="db에 따라 디스코드 멤버 역할을 재부여합니다. 반대의 경우는 분기역할적용 커맨드를 사용해주세요"
+    name="현재멤버역할재부여",
+    description="db에 따라 디스코드 멤버 역할을 재부여합니다. 운영진 역할은 부여하지 않습니다. 반대의 경우는 분기역할적용 커맨드를 사용해주세요"
 )
 @app_commands.checks.has_permissions(administrator=True)
 async def reditribute_current_member(interaction: discord.Interaction):
@@ -392,6 +417,7 @@ async def update_display_name(interaction: discord.Interaction,member: discord.M
             DEBUG(f"{member.display_name} does not exist in db. adding a fresh slide")
             addUser2db(member,serverId,data)
             data[serverId]["users"][str(member.id)]["currentMember"] = False
+        DEBUG(f"{member.display_name}'s nickname has not changed." if data[serverId]["users"][str(member.id)]["name"]==member.display_name else f"{data[serverId]["users"][str(member.id)]["name"]}->member.display_name")
         data[serverId]["users"][str(member.id)]["name"] = member.display_name
         await interaction.response.send_message(f"성공적으로 {member.display_name}님의 닉네임을 갱신했습니다.")
         DEBUG(f"saving db data")
@@ -408,11 +434,149 @@ async def update_display_name(interaction: discord.Interaction,member: discord.M
             DEBUG(f"{member.display_name} does not exist in db. adding a fresh slide")
             addUser2db(member,serverId,data)
             data[serverId]["users"][str(member.id)]["currentMember"] = False
+        DEBUG(f"{member.display_name}'s nickname has not changed." if data[serverId]["users"][str(member.id)]["name"]==member.display_name else f"{data[serverId]["users"][str(member.id)]["name"]}->member.display_name")
         data[serverId]["users"][str(member.id)]["name"] = member.display_name
         pass
     DEBUG(f"saving db data")
     save_data(data)
     await interaction.response.send_message(f"성공적으로 db 닉네임들을 갱신했습니다.")
+    pass
+
+@bot.tree.command(
+    name="역할저장",
+    description="디스코드의 멤버/운영진 역할을 db에 동기화합니다. db에 멤버가 없다면 자동으로 자리를 생성합니다"
+)
+@app_commands.checks.has_permissions(administrator=True)
+async def save_roles(interaction: discord.Interaction):
+    DEBUG("> Running save_roles")
+    await interaction.response.defer()
+
+    guild = interaction.guild
+    serverId = str(guild.id)
+    DEBUG(f"loading db data")
+    data = load_data()
+    curMemberRole = await getCurrentMemberRole(guild)
+    curModRole = await getCurrentModeratorRole(guild)
+
+    memberCnt = 0
+    moderatorCnt = 0
+
+    allUsers = guild.members
+    userCnt = len([x for x in allUsers if not x.bot])
+    for member in allUsers:
+        if member.bot:
+            continue
+        if str(member.id) not in data[serverId]["users"].keys():
+            DEBUG(f"{member.display_name} does not exist in db. adding a fresh slide")
+            addUser2db(member,serverId,data)
+
+        isMember = curMemberRole in member.roles
+        isModerator = curModRole in member.roles
+        data[serverId]["users"][str(member.id)]["currentMember"] = isMember
+        data[serverId]["users"][str(member.id)]["currentModerator"] = isModerator
+        if isMember:
+            memberCnt += 1
+        if isModerator:
+            moderatorCnt += 1
+        pass
+    DEBUG(f"saving db data")
+    save_data(data)
+
+    await interaction.followup.send(
+        content=f"db에 역할을 동기화했습니다. 총인원({userCnt}).\n"+
+        f"멤버 ({memberCnt}), 운영진 ({moderatorCnt})."
+    )
+    pass
+
+RUN_CODE_BOT_NAME = "I Run Code"
+RANDOM_PICK_CHANNEL_ID = 1536960958616965238 # channel code
+
+@bot.tree.command(
+    name="랜덤뽑기",
+    description="jungol 스코어보드 기반으로 추첨 코드를 생성합니다. 생성된 코드를 /run python 으로 직접 실행해주세요"
+)
+@app_commands.describe(
+    code="jungol 대회 코드",
+    weighted="점수에 따라 뽑을 사람 수",
+    random="점수에 상관없이 뽑을 사람 수"
+)
+@app_commands.checks.has_permissions(administrator=True)
+async def run_random_pick(interaction: discord.Interaction, code: int, weighted:int = 1, random:int = 1):
+    DEBUG("> Running run_random_pick")
+    await interaction.response.defer()
+
+    target_channel = bot.get_channel(RANDOM_PICK_CHANNEL_ID) or await bot.fetch_channel(RANDOM_PICK_CHANNEL_ID)
+
+    try:
+        scoreboard, screenshot_bytes = await asyncio.to_thread(getScoreboard, str(code), True, True)
+    except Exception as e:
+        DEBUG(f"getScoreboard failed: {e}\n{traceback.format_exc()}")
+        await interaction.followup.send(f"스코어보드를 가져오지 못했습니다: {e}")
+        return
+    
+    if len(scoreboard) < weighted+random:
+        await interaction.followup.send(
+            f"추첨 가능한 인원({len(scoreboard)}명)이 요청한 인원({weighted+random}명)보다 적습니다."
+        )
+        return
+
+    generated_code = (f"""
+# 모각코 {datetime.now().strftime("%m/%d")} 추첨
+from random import choice
+참여자 = (
+\t{"\n\t".join([(("['"+str(scoreboard[i]['name'])+"'] * "+str(scoreboard[i]["score"]//(scoreboard[i]["mod"]+1))+("" if i==len(scoreboard)-1 else " +")).ljust(30)+"# "+(("운영진: "+str(scoreboard[i]["score"])+"//2") if scoreboard[i]["mod"] else ("일반: "+str(scoreboard[i]["score"])))) for i in range(len(scoreboard))])}
+)
+
+# 점수 가중 추첨
+for _ in range({weighted}):
+    당첨자 = choice(참여자)
+    참여자 = [x for x in 참여자 if x != 당첨자]
+    print(당첨자)
+
+print()
+
+# 참여자 랜덤 추첨
+참여자 = list(set(참여자))
+for _ in range({random}):
+    당첨자 = choice(참여자)
+    참여자 = [x for x in 참여자 if x != 당첨자]
+    print(당첨자)
+""")
+
+    await interaction.followup.send(
+        "아래 코드를 복사해서 `/run python` 명령어로 실행해주세요:\n"
+        f"```{generated_code}```",
+        wait=True
+    )
+
+    def check(m: discord.Message):
+        return m.channel.id == interaction.channel_id and m.author.name == RUN_CODE_BOT_NAME
+
+    try:
+        response = await bot.wait_for("message", check=check, timeout=120.0)
+    except asyncio.TimeoutError:
+        DEBUG("timed out waiting for run-code bot reply")
+        await interaction.followup.send("실행 결과를 받지 못했습니다 (시간 초과).")
+        return
+    # print(response.author)
+    # print(response)
+    # print(response.content)
+    output_lines = response.content.strip().splitlines()[2:-1]
+    winners = [line.strip() for line in output_lines if line.strip() if line != ""]
+
+    if not winners:
+        await interaction.followup.send(f"결과를 해석하지 못했습니다. 실행 결과: {response.content}")
+        return
+
+    winners_str = f"""{datetime.now().strftime("%m/%d")} 모각코 랜덤 추첨 결과입니다.
+- {"\n- ".join(winners)}
+당첨되신 분들께서는 디스코드로 본인의 핸들과 함께 <@782121672236728361> 에게 원하는 상품을 말씀해주시면 됩니다.
+
+https://jungol.co.kr/contest/{code}/scoreboard
+"""
+    
+    files = [discord.File(BytesIO(screenshot_bytes), filename="scoreboard.png")] if screenshot_bytes else []
+    await target_channel.send(f"{winners_str}", files=files)
     pass
 
 
@@ -441,6 +605,12 @@ async def reditribute_current_member_error(interaction: discord.Interaction,erro
     await defaultErrorHandling(interaction,error)
 @update_display_name.error
 async def reditribute_current_member_error(interaction: discord.Interaction,error):
+    await defaultErrorHandling(interaction,error)
+@save_roles.error
+async def save_roles_error(interaction: discord.Interaction,error):
+    await defaultErrorHandling(interaction,error)
+@run_random_pick.error
+async def run_random_pick_error(interaction: discord.Interaction,error):
     await defaultErrorHandling(interaction,error)
     pass
 
