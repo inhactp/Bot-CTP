@@ -503,7 +503,7 @@ RANDOM_PICK_CHANNEL_ID = 1536960958616965238 # channel code
 @app_commands.checks.has_permissions(administrator=True)
 async def run_random_pick(interaction: discord.Interaction, code: int, weighted:int = 1, random:int = 1):
     DEBUG("> Running run_random_pick")
-    await interaction.response.defer()
+    await interaction.response.defer(ephemeral=True)
 
     target_channel = bot.get_channel(RANDOM_PICK_CHANNEL_ID) or await bot.fetch_channel(RANDOM_PICK_CHANNEL_ID)
 
@@ -511,12 +511,14 @@ async def run_random_pick(interaction: discord.Interaction, code: int, weighted:
         scoreboard, screenshot_bytes = await asyncio.to_thread(getScoreboard, str(code), True, True)
     except Exception as e:
         DEBUG(f"getScoreboard failed: {e}\n{traceback.format_exc()}")
-        await interaction.followup.send(f"스코어보드를 가져오지 못했습니다: {e}")
+        await interaction.followup.send(f"스코어보드를 가져오지 못했습니다: {e}",ephemeral=True)
         return
+    
+    files = [discord.File(BytesIO(screenshot_bytes), filename="scoreboard.png")] if screenshot_bytes else []
     
     if len(scoreboard) < weighted+random:
         await interaction.followup.send(
-            f"추첨 가능한 인원({len(scoreboard)}명)이 요청한 인원({weighted+random}명)보다 적습니다."
+            f"추첨 가능한 인원({len(scoreboard)}명)이 요청한 인원({weighted+random}명)보다 적습니다.",ephemeral=True
         )
         return
 
@@ -546,7 +548,7 @@ for _ in range({random}):
     await interaction.followup.send(
         "아래 코드를 복사해서 `/run python` 명령어로 실행해주세요:\n"
         f"```{generated_code}```",
-        wait=True
+        wait=True,files=files
     )
 
     def check(m: discord.Message):
@@ -575,7 +577,6 @@ for _ in range({random}):
 https://jungol.co.kr/contest/{code}/scoreboard
 """
     
-    files = [discord.File(BytesIO(screenshot_bytes), filename="scoreboard.png")] if screenshot_bytes else []
     await target_channel.send(f"{winners_str}", files=files)
     pass
 
