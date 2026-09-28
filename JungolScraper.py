@@ -80,32 +80,45 @@ def getScoreboard(contest_id: int|str, headless: bool = True, screenshot: bool =
     try:
         login(driver)
         driver.get(f"https://jungol.co.kr/group/1123")
-        sleep(1)
-        el_members = WebDriverWait(driver, 10).until(
-            EC.presence_of_all_elements_located((By.CSS_SELECTOR, "article.S-3wldza"))
-        )[0].find_elements(By.XPATH, "./*")
-        members = {"mod":[],"mem":[]}
-        inc = 0
-        for el in el_members:
-            tag = el.tag_name.lower()
-            if tag == "h2":
-                #print(el.text)
-                inc+=1
-            elif 0<inc:
-                try:
-                    name = el.find_element(By.CSS_SELECTOR, "button._p").text.strip().split()[0]
-                    members[[None,"mod","mod","mem"][inc]].append(name)
-                except:
-                    pass
-            pass
+        sleep(0.5) # .group-card.group-people.S-w2homj > div:nth-child(1) > div a button
+        el_names1 = [x.text.strip().split()[0] for x in 
+                     WebDriverWait(driver, 10).until(
+            EC.presence_of_all_elements_located((By.CSS_SELECTOR, ".group-card.group-people.S-w2homj > div:nth-child(1) > div a button"))
+        )]
+        el_names2 = [x.text.strip().split()[0] for x in 
+                     WebDriverWait(driver, 10).until(
+            EC.presence_of_all_elements_located((By.CSS_SELECTOR, ".group-card.group-people.S-w2homj > div:nth-child(2) > div a button"))
+        )]
+        el_names3 = [x.text.strip().split()[0] for x in 
+                     WebDriverWait(driver, 10).until(
+            EC.presence_of_all_elements_located((By.CSS_SELECTOR, ".group-card.group-people.S-w2homj > div:nth-child(3) > div a button"))
+        )]
+        members = {"mod":el_names1+el_names2,"mem":el_names3}
+        print(members)
+        # el_members = WebDriverWait(driver, 10).until(
+        #     EC.presence_of_all_elements_located((By.CSS_SELECTOR, "article.S-3wldza"))
+        # )[0].find_elements(By.XPATH, "./*")
+        # inc = 0
+        # for el in el_members:
+        #     tag = el.tag_name.lower()
+        #     if tag == "h2":
+        #         #print(el.text)
+        #         inc+=1
+        #     elif 0<inc:
+        #         try:
+        #             name = el.find_element(By.CSS_SELECTOR, "button._p").text.strip().split()[0]
+        #             members[[None,"mod","mod","mem"][inc]].append(name)
+        #         except:
+        #             pass
+        #     pass
         #print(members)
         
         driver.get(f"https://jungol.co.kr/contest/{contest_id}/scoreboard")
         el_names = WebDriverWait(driver, 10).until(
-            EC.presence_of_all_elements_located((By.CSS_SELECTOR, ".S-dady6r.navLeft.leftSticky h4"))
+            EC.presence_of_all_elements_located((By.CSS_SELECTOR, ".chip.s.ra h4"))
         )
         el_scores = WebDriverWait(driver, 10).until(
-            EC.presence_of_all_elements_located((By.CSS_SELECTOR, ".S-dady6r.navLeft.leftSticky .S-ep1uo1 span span"))
+            EC.presence_of_all_elements_located((By.CSS_SELECTOR, ".chip.s.ra div > span > span"))
         )
         scbd = []
         for i in range(len(el_names)):
@@ -119,7 +132,7 @@ def getScoreboard(contest_id: int|str, headless: bool = True, screenshot: bool =
 
         screenshot_bytes = None
         if screenshot:
-            score_elements = driver.find_elements(By.CSS_SELECTOR, ".S-1oezert > .S-dady6r > .S-dady6r:not(:first-child)")
+            score_elements = driver.find_elements(By.CSS_SELECTOR, ".board article")
             if score_elements:
                 screenshot_bytes = stitchScreenshots([el.screenshot_as_png for el in score_elements])
 
